@@ -106,24 +106,21 @@ cytosine = 'C'
 public export
 record FSTCK (q : Type) where
   constructor F
-  line         : Ref q Nat
-  col          : Ref q Nat
-  psns         : Ref q (SnocList Position)
+  prev_        : Ref q ByteString
+  cur_         : Ref q ByteString
+  offset_      : Ref q Nat
+  relpos_      : Ref q Integer
+  len_         : Ref q Nat
+  positions_   : Ref q (SnocList BytePos)
   strs         : Ref q (SnocList String)
-  err          : Ref q (Maybe $ BoundedErr Void)
+  err          : Ref q (Maybe $ BBErr Void)
   fastavalues  : Ref q (SnocList FASTAValue)
   fastalines   : Ref q (SnocList FASTALine)
   fastacounter : Ref q Nat
-  bytes        : Ref q ByteString
+  line         : Ref q Nat
 
 export %inline
-HasPosition FSTCK where
-  line      = FSTCK.line
-  col       = FSTCK.col
-  positions = FSTCK.psns
-
-export %inline
-HasError FSTCK Void where
+HasBBErr FSTCK Void where
   error = err
 
 export %inline
@@ -136,23 +133,32 @@ HasStack FSTCK (SnocList FASTALine) where
 
 export %inline
 HasBytes FSTCK where
-  bytes = FSTCK.bytes
+  prev = prev_
+  cur = cur_
+  offset = offset_
+  relpos = relpos_
+  len = len_
+  positions = positions_
 
 export
 fastainit : CoordinateSystem -> F1 q (FSTCK q)
 fastainit coordsys = T1.do
-  l  <- ref1 Z
-  c  <- ref1 Z
-  bs <- ref1 [<]
+  pr <- ref1 empty
+  fl <- ref1 empty
+  ro <- ref1 Z
+  rr <- ref1 0
+  ll <- ref1 Z
+  ps <- ref1 [<]
   ss <- ref1 [<]
   er <- ref1 Nothing
   fvs <- ref1 [<]
   fls <- ref1 [<]
+  ln  <- ref1 Z
   fc <- case coordsys of
           ZeroBased => ref1 Z
           OneBased => ref1 (S Z)
   by <- ref1 ""
-  pure (F l c bs ss er fvs fls fc by)
+  pure (F pr fl ro rr ll ps ss er fvs fls fc ln)
 
 --------------------------------------------------------------------------------
 --          Parser State
@@ -165,7 +171,7 @@ fastainit coordsys = T1.do
 --          Errors
 --------------------------------------------------------------------------------
 
-fastaErr : Arr32 FSz (FSTCK q -> F1 q (BoundedErr Void))
+fastaErr : Arr32 FSz (FSTCK q -> F1 q (BBErr Void))
 fastaErr =
   arr32 FSz (unexpected [])
     [ E FBroken $ unexpected ["character other than '>'"]
@@ -205,7 +211,7 @@ onFASTAValueCytosine = T1.do
 
 onNLFHdr : (x : FSTCK q) => ByteString -> F1 q FST
 onNLFHdr v = T1.do
-  incline 1
+  mod1 x.line S
   push1 x.fastavalues (NL v)
   fvs@(_::_) <- getList x.fastavalues | [] => pure FEmpty
   case Prelude.any isHeader fvs && Prelude.any isData fvs of
@@ -217,7 +223,7 @@ onNLFHdr v = T1.do
 
 onNLFD : (x : FSTCK q) => ByteString -> F1 q FST
 onNLFD v = T1.do
-  incline 1
+  mod1 x.line S
   push1 x.fastavalues (NL v)
   fvs@(_::_) <- getList x.fastavalues | [] => pure FEmpty
   case Prelude.any isHeader fvs && Prelude.any isData fvs of
@@ -227,9 +233,9 @@ onNLFD v = T1.do
       push1 x.fastalines (MkFASTALine ln fvs)
       pure FDNL
 
-onEOI : (x : FSTCK q) => F1 q (Either (BoundedErr Void) FST)
+onEOI : (x : FSTCK q) => F1 q (Either (BBErr Void) FST)
 onEOI = T1.do
-  incline 1
+  mod1 x.line S
   fvs@(_::_) <- getList x.fastavalues
     | [] => arrFail FSTCK fastaErr FEmpty x
   ln <- read1 x.line
@@ -239,39 +245,39 @@ onEOI = T1.do
 fastaInit : DFA q FSz FSTCK
 fastaInit =
   dfa
-    [ read '>' (\_ => onFASTAValueHdrS HeaderStart)
+    [ string '>' (\_ => onFASTAValueHdrS HeaderStart)
     ]
 
 fastaHdrStrStart : DFA q FSz FSTCK
 fastaHdrStrStart =
   dfa
-    [ read dot (onFASTAValueHdrR . HeaderValue)
+    [ string dot (onFASTAValueHdrR . HeaderValue)
     ]
 
 fastaHdrStrRest : DFA q FSz FSTCK
 fastaHdrStrRest =
   dfa
-    [ read dot (onFASTAValueHdrR . HeaderValue)
-    , conv linebreak (\bs => onNLFHdr bs)
+    [ string dot (onFASTAValueHdrR . HeaderValue)
+    , bytes linebreak (\bs => onNLFHdr bs)
     ]
 
 fastaFDInit : DFA q FSz FSTCK
 fastaFDInit =
   dfa
-    [ read adenine (\_ => onFASTAValueAdenine)
-    , read thymine (\_ => onFASTAValueThymine)
-    , read guanine (\_ => onFASTAValueGuanine)
-    , read cytosine (\_ => onFASTAValueCytosine)
+    [ step adenine onFASTAValueAdenine
+    , step thymine onFASTAValueThymine
+    , step guanine onFASTAValueGuanine
+    , step cytosine onFASTAValueCytosine
     ]
 
 fastaFD : DFA q FSz FSTCK
 fastaFD =
   dfa
-    [ conv linebreak (\bs => onNLFD bs)
-    , read adenine (\_ => onFASTAValueAdenine)
-    , read thymine (\_ => onFASTAValueThymine)
-    , read guanine (\_ => onFASTAValueGuanine)
-    , read cytosine (\_ => onFASTAValueCytosine)
+    [ bytes linebreak onNLFD
+    , step adenine onFASTAValueAdenine
+    , step thymine onFASTAValueThymine
+    , step guanine onFASTAValueGuanine
+    , step cytosine onFASTAValueCytosine
     ]
 
 fastaSteps : Lex1 q FSz FSTCK
@@ -285,7 +291,7 @@ fastaSteps =
     , E FD fastaFD
     ]
 
-fastaEOI : FST -> FSTCK q -> F1 q (Either (BoundedErr Void) FASTA)
+fastaEOI : FST -> FSTCK q -> F1 q (Either (BBErr Void) FASTA)
 fastaEOI st x =
   case st == FIni || st == FHdr || st == FEmpty || st == FBroken of
     True  => arrFail FSTCK fastaErr st x
@@ -299,7 +305,7 @@ fastaEOI st x =
 --------------------------------------------------------------------------------
 
 public export
-fasta : CoordinateSystem -> P1 q (BoundedErr Void) FASTA
+fasta : CoordinateSystem -> P1 q (BBErr Void) FASTA
 fasta coordsys = P FIni (fastainit coordsys) fastaSteps snocChunk fastaErr fastaEOI
 
 export %inline
@@ -312,17 +318,17 @@ parseFASTA coordsys origin str = parseString (fasta coordsys) origin str
 
 streamFASTA :  CoordinateSystem
             -> String
-            -> AsyncPull Poll Void [ParseError Void, Errno] ()
+            -> AsyncPull Poll Void [BBErr Void, Errno] ()
 streamFASTA coordsys pth =
      readBytes pth
-  |> streamParse (fasta coordsys) (FileSrc pth)
+  |> streamParse (fasta coordsys)
   |> C.count
   |> printLnTo Stdout
 
 streamFASTAFiles :  CoordinateSystem
-                 -> AsyncPull Poll String [ParseError Void, Errno] ()
-                 -> AsyncPull Poll Void [ParseError Void, Errno] ()
+                 -> AsyncPull Poll String [BBErr Void, Errno] ()
+                 -> AsyncPull Poll Void [BBErr Void, Errno] ()
 streamFASTAFiles coordsys pths =
-     flatMap pths (\p => readBytes p |> streamParse (fasta coordsys) (FileSrc p))
+     flatMap pths (\p => readBytes p |> streamParse (fasta coordsys))
   |> C.count
   |> printLnTo Stdout

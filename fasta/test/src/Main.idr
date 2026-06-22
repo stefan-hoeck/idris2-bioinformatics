@@ -71,19 +71,19 @@ fastastrempty =
 
 fastastrnoheadererr : String
 fastastrnoheadererr =
-  "Error: Unexpected 'A'\n\nvirtual: 1:1--1:2\n 1 | ATTG\n     ^\n"
+  "Error: Unexpected 'A'\n\nvirtual: 1:1\n 1 | ATTG\n     ^\n"
   
 fastastrheaderaftersequenceerr : String
 fastastrheaderaftersequenceerr =
-  "Error: Unexpected '>'\n\nvirtual: 3:2--3:3\n 1 | >x\n 2 | A\n 3 | >x\n      ^\n"
+  "Error: Unexpected '>'\n\nvirtual: 3:1\n 1 | >x\n 2 | A\n 3 | >x\n     ^\n"
 
 fastastrbadsequenceerr : String
 fastastrbadsequenceerr =
-  "Error: Unexpected 'O'\n\nvirtual: 2:5--2:6\n 1 | >x\n 2 | ATGO\n         ^\n"
+  "Error: Unexpected 'O'\n\nvirtual: 2:4\n 1 | >x\n 2 | ATGO\n        ^\n"
 
 fastastremptyerr : String
 fastastremptyerr =
-  "Error: Unexpected end of input\n\nvirtual: 1:1--1:2\n     ^\n"
+  "Error: Unexpected end of input\n\nvirtual: 1:1\n     ^\n"
 
 --------------------------------------------------------------------------------
 --          testErr
