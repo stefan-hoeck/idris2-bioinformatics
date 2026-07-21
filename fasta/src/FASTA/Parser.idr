@@ -106,11 +106,13 @@ cytosine = 'C'
 public export
 record FSTCK (q : Type) where
   constructor F
-  prev_        : Ref q ByteString
-  cur_         : Ref q ByteString
-  offset_      : Ref q Nat
-  relpos_      : Ref q Integer
-  len_         : Ref q Nat
+  bufSize_     : Nat
+  prev_        : ByteString
+  cur_         : IBuffer bufSize_
+  prevOffset_  : Nat
+  curOffset_   : Nat
+  from_        : Ref q (LTENat bufSize_)
+  till_        : Ref q (LTENat bufSize_)
   positions_   : Ref q (SnocList BytePos)
   strs         : Ref q (SnocList String)
   err          : Ref q (Maybe $ BBErr Void)
@@ -133,21 +135,29 @@ HasStack FSTCK (SnocList FASTALine) where
 
 export %inline
 HasBytes FSTCK where
-  prev = prev_
-  cur = cur_
-  offset = offset_
-  relpos = relpos_
-  len = len_
-  positions = positions_
+  bufSize    = bufSize_
+  prev       = prev_
+  cur        = cur_
+  prevOffset = prevOffset_
+  curOffset  = curOffset_
+  from       = from_
+  till       = till_
+  positions  = positions_
+  copy s o bs buf rf rt sk =
+    { bufSize_    := s
+    , cur_        := buf
+    , prev_       := bs
+    , prevOffset_ := o
+    , curOffset_  := o + bs.size
+    , from_       := rf
+    , till_       := rt
+    } sk
 
 export
-fastainit : CoordinateSystem -> F1 q (FSTCK q)
-fastainit coordsys = T1.do
-  pr <- ref1 empty
-  fl <- ref1 empty
-  ro <- ref1 Z
-  rr <- ref1 0
-  ll <- ref1 Z
+fastainit : CoordinateSystem -> (n : Nat) -> IBuffer n -> F1 q (FSTCK q)
+fastainit coordsys n buf = T1.do
+  rf <- ref1 (first n)
+  rt <- ref1 (first n)
   ps <- ref1 [<]
   ss <- ref1 [<]
   er <- ref1 Nothing
@@ -158,7 +168,7 @@ fastainit coordsys = T1.do
           ZeroBased => ref1 Z
           OneBased => ref1 (S Z)
   by <- ref1 ""
-  pure (F pr fl ro rr ll ps ss er fvs fls fc ln)
+  pure (F n empty buf 0 0 rf rt ps ss er fvs fls fc ln)
 
 --------------------------------------------------------------------------------
 --          Parser State
