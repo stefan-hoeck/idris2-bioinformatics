@@ -4,20 +4,8 @@ path = "fasta"
 ipkg = "ilex-fasta.ipkg"
 test = "test/test.ipkg"
 
-[custom.all.ilex-core]
-type   = "git"
-url    = "https://github.com/stefan-hoeck/idris2-ilex.git"
-commit = "latest:main"
-ipkg   = "core/ilex-core.ipkg"
-
-[custom.all.ilex]
-type   = "git"
-url    = "https://github.com/stefan-hoeck/idris2-ilex.git"
-commit = "latest:main"
-ipkg   = "ilex.ipkg"
-
-[custom.all.ilex-streams]
-type   = "git"
-url    = "https://github.com/stefan-hoeck/idris2-ilex.git"
-commit = "latest:main"
-ipkg   = "streams/ilex-streams.ipkg"
+[custom.all]
+array.commit        = "latest:main"
+ilex-core.commit    = "latest:main"
+ilex.commit         = "latest:main"
+ilex-streams.commit = "latest:main"
